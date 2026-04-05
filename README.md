@@ -75,3 +75,14 @@ Telegram Trigger
 | `sleep_tracker_telegram.json`  | Workflow n8n (avec placeholders credentials)       |
 | `start_n8n.bat`               | Script de lancement n8n + tunnel Cloudflare        |
 | `cloudflared.log`             | Log du tunnel Cloudflare (genere au lancement)     |
+
+## Contribuer
+
+Les contributions sont les bienvenues ! N'hesitez pas a :
+
+1. Forker le projet
+2. Creer une branche pour votre fonctionnalite (`git checkout -b feature/ma-fonctionnalite`)
+3. Commiter vos changements (`git commit -m "Ajout de ma fonctionnalite"`)
+4. Pusher la branche (`git push origin feature/ma-fonctionnalite`)
+5. Ouvrir une Pull Request
+
