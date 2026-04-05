@@ -1,0 +1,278 @@
+{
+  "name": "Sleep Tracker Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 0],
+      "credentials": {
+        "telegramApi": {
+          "id": "TON_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "condition-dors",
+              "leftValue": "={{ $json.message.text.toLowerCase() }}",
+              "rightValue": "dors",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-dors",
+      "name": "Est-ce 'dors' ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [250, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extraire l'heure du message \"dors HH:MM\"\nconst text = $input.item.json.message.text;\nconst match = text.match(/(\\d{1,2})[h:](\\d{2})/);\n\nif (!match) {\n  return { error: true, reply: \"❌ Format invalide. Utilise : dors HH:MM\" };\n}\n\nconst heures = parseInt(match[1]);\nconst minutes = parseInt(match[2]);\n\nif (heures > 23 || minutes > 59) {\n  return { error: true, reply: \"❌ Heure invalide. Utilise un format 00:00 à 23:59\" };\n}\n\nconst heureCoucher = `${String(heures).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;\n\nreturn {\n  error: false,\n  heureCoucher,\n  chatId: $input.item.json.message.chat.id,\n  reply: `😴 Bonne nuit ! Coucher enregistré à ${heures}h${String(minutes).padStart(2, '0')}. Envoie \\\"réveil HH:MM\\\" demain matin.`\n};"
+      },
+      "id": "code-parse-dors",
+      "name": "Parser 'dors'",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_URL || 'http://localhost:5678' }}/api/v1/variables",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "key",
+              "value": "sleep_coucher_{{ $json.chatId }}"
+            },
+            {
+              "name": "value",
+              "value": "={{ $json.heureCoucher }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "save-coucher-http",
+      "name": "Sauvegarder Coucher (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [750, -200],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.N8N_URL || 'http://localhost:5678' }}/api/v1/variables/sleep_coucher_{{ $('Parser \\'dors\\'').item.json.chatId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "value",
+              "value": "={{ $('Parser \\'dors\\'').item.json.heureCoucher }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-coucher-http",
+      "name": "Mettre à jour Coucher (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, -300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parser \\'dors\\'').item.json.chatId }}",
+        "text": "={{ $('Parser \\'dors\\'').item.json.reply }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-reply-dors",
+      "name": "Répondre Coucher",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1000, -100],
+      "credentials": {
+        "telegramApi": {
+          "id": "TON_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "condition-reveil",
+              "leftValue": "={{ $json.message.text.toLowerCase() }}",
+              "rightValue": "reveil",
+              "operator": {
+                "type": "string",
+                "operation": "startsWith"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-reveil",
+      "name": "Est-ce 'réveil' ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [250, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.N8N_URL || 'http://localhost:5678' }}/api/v1/variables",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "get-coucher-http",
+      "name": "Récupérer Coucher (API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Récupérer le message et les variables\nconst message = $('Telegram Trigger').item.json.message;\nconst text = message.text;\nconst chatId = message.chat.id;\n\n// Parser l'heure de réveil\nconst matchReveil = text.match(/(\\d{1,2})[h:](\\d{2})/);\nif (!matchReveil) {\n  return {\n    chatId,\n    reply: \"❌ Format invalide. Utilise : réveil HH:MM\"\n  };\n}\n\nconst heuresReveil = parseInt(matchReveil[1]);\nconst minutesReveil = parseInt(matchReveil[2]);\n\nif (heuresReveil > 23 || minutesReveil > 59) {\n  return {\n    chatId,\n    reply: \"❌ Heure invalide.\"\n  };\n}\n\n// Chercher la variable de coucher dans les résultats de l'API\nconst variables = $('Récupérer Coucher (API)').first().json.data || $('Récupérer Coucher (API)').first().json;\nconst varName = `sleep_coucher_${chatId}`;\n\nlet coucherVar;\nif (Array.isArray(variables)) {\n  coucherVar = variables.find(v => v.key === varName);\n} else {\n  coucherVar = null;\n}\n\nif (!coucherVar || !coucherVar.value) {\n  return {\n    chatId,\n    reply: \"❌ Aucune heure de coucher enregistrée. Envoie d'abord : dors HH:MM\"\n  };\n}\n\n// Parser l'heure de coucher\nconst [hCoucher, mCoucher] = coucherVar.value.split(':').map(Number);\n\n// Calcul de la durée en minutes\n// Gère le passage de minuit (ex: coucher 23:30, réveil 07:15)\nlet minutesCoucher = hCoucher * 60 + mCoucher;\nlet minutesReveilTotal = heuresReveil * 60 + minutesReveil;\n\n// Si le réveil est \"avant\" le coucher, on a passé minuit\nlet dureeMinutes;\nif (minutesReveilTotal >= minutesCoucher) {\n  dureeMinutes = minutesReveilTotal - minutesCoucher;\n} else {\n  // Passage de minuit : ex coucher 23:30 (1410) -> réveil 07:15 (435)\n  dureeMinutes = (24 * 60 - minutesCoucher) + minutesReveilTotal;\n}\n\nconst dureeH = Math.floor(dureeMinutes / 60);\nconst dureeM = dureeMinutes % 60;\n\n// Déterminer la qualité du sommeil\nlet commentaire;\nlet emoji;\nif (dureeMinutes >= 8 * 60) {\n  commentaire = \"Excellente nuit !\";\n  emoji = \"🌟\";\n} else if (dureeMinutes >= 7 * 60) {\n  commentaire = \"Bonne nuit !\";\n  emoji = \"✅\";\n} else if (dureeMinutes >= 6 * 60) {\n  commentaire = \"Correct, mais essaie de dormir plus.\";\n  emoji = \"😐\";\n} else {\n  commentaire = \"Insuffisant ! Pense à te coucher plus tôt.\";\n  emoji = \"⚠️\";\n}\n\n// Formater la date de la nuit\nconst now = new Date();\nconst hier = new Date(now);\n// Si le coucher est le soir (>= 18h), la nuit a commencé hier\nif (hCoucher >= 18) {\n  hier.setDate(hier.getDate() - 1);\n}\nconst jourNuit = `${String(hier.getDate()).padStart(2, '0')}/${String(hier.getMonth() + 1).padStart(2, '0')}`;\n\nconst hCoucherStr = `${String(hCoucher).padStart(2, '0')}h${String(mCoucher).padStart(2, '0')}`;\nconst hReveilStr = `${String(heuresReveil).padStart(2, '0')}h${String(minutesReveil).padStart(2, '0')}`;\nconst dureeStr = `${dureeH}h${String(dureeM).padStart(2, '0')}`;\n\nconst reply = `🛏️ Nuit du ${jourNuit} → Tu as dormi ${dureeStr}.\\nCoucher : ${hCoucherStr} | Réveil : ${hReveilStr}\\n${emoji} ${commentaire}`;\n\nreturn {\n  chatId,\n  reply\n};"
+      },
+      "id": "code-calcul-sommeil",
+      "name": "Calculer Sommeil",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {}
+      },
+      "id": "telegram-reply-reveil",
+      "name": "Répondre Résumé",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1000, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "TON_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "❓ Commande non reconnue.\n\nUtilise :\n• dors HH:MM → enregistrer ton coucher\n• réveil HH:MM → enregistrer ton réveil et voir le résumé",
+        "additionalFields": {}
+      },
+      "id": "telegram-reply-help",
+      "name": "Répondre Aide",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [500, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "TON_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          { "node": "Est-ce 'dors' ?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Est-ce 'dors' ?": {
+      "main": [
+        [
+          { "node": "Parser 'dors'", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Est-ce 'réveil' ?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parser 'dors'": {
+      "main": [
+        [
+          { "node": "Sauvegarder Coucher (API)", "type": "main", "index": 0 },
+          { "node": "Répondre Coucher", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Sauvegarder Coucher (API)": {
+      "main": [
+        [
+          { "node": "Mettre à jour Coucher (API)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Est-ce 'réveil' ?": {
+      "main": [
+        [
+          { "node": "Récupérer Coucher (API)", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Répondre Aide", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Récupérer Coucher (API)": {
+      "main": [
+        [
+          { "node": "Calculer Sommeil", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Calculer Sommeil": {
+      "main": [
+        [
+          { "node": "Répondre Résumé", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}

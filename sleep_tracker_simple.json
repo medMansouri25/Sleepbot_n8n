@@ -1,0 +1,310 @@
+{
+  "name": "Sleep Tracker Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const text = $input.item.json.message.text || '';\nconst chatId = $input.item.json.message.chat.id;\nconst lowerText = text.toLowerCase().trim();\n\nlet command = 'unknown';\nif (lowerText.startsWith('dors')) {\n  command = 'dors';\n} else if (lowerText.startsWith('reveil') || lowerText.startsWith('réveil')) {\n  command = 'reveil';\n} else if (lowerText.startsWith('stats') || lowerText.startsWith('stat')) {\n  command = 'stats';\n}\n\nconst match = text.match(/(\\d{1,2})[h:](\\d{2})/);\nlet heures = null;\nlet minutes = null;\nif (match) {\n  heures = parseInt(match[1]);\n  minutes = parseInt(match[2]);\n}\n\nreturn {\n  command,\n  heures,\n  minutes,\n  chatId,\n  rawText: text\n};"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "Parser Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-dors",
+              "leftValue": "={{ $json.command }}",
+              "rightValue": "dors",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000010",
+      "name": "Est-ce dors ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-reveil",
+              "leftValue": "={{ $json.command }}",
+              "rightValue": "reveil",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000011",
+      "name": "Est-ce reveil ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-stats",
+              "leftValue": "={{ $json.command }}",
+              "rightValue": "stats",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000012",
+      "name": "Est-ce stats ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { heures, minutes, chatId } = $input.item.json;\n\nif (heures === null || minutes === null || heures > 23 || minutes > 59) {\n  return {\n    chatId,\n    reply: \"❌ Format invalide. Utilise : dors HH:MM (ex: dors 23:30)\"\n  };\n}\n\nconst heureCoucher = `${String(heures).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;\n\nconst staticData = $getWorkflowStaticData('global');\nstaticData[`coucher_${chatId}`] = heureCoucher;\nstaticData[`coucher_timestamp_${chatId}`] = Date.now();\n\nconst hStr = `${heures}h${String(minutes).padStart(2, '0')}`;\n\nreturn {\n  chatId,\n  reply: `😴 Bonne nuit ! Coucher enregistre a ${hStr}.\\nEnvoie \\\"reveil HH:MM\\\" demain matin.`\n};"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000004",
+      "name": "Enregistrer Coucher",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 100]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const { heures, minutes, chatId } = $input.item.json;\n\nif (heures === null || minutes === null || heures > 23 || minutes > 59) {\n  return {\n    chatId,\n    reply: \"❌ Format invalide. Utilise : reveil HH:MM (ex: reveil 07:15)\"\n  };\n}\n\nconst staticData = $getWorkflowStaticData('global');\nconst coucherStr = staticData[`coucher_${chatId}`];\n\nif (!coucherStr) {\n  return {\n    chatId,\n    reply: \"❌ Aucune heure de coucher enregistree.\\nEnvoie d'abord : dors HH:MM\"\n  };\n}\n\nconst [hCoucher, mCoucher] = coucherStr.split(':').map(Number);\n\nlet minutesCoucher = hCoucher * 60 + mCoucher;\nlet minutesReveil = heures * 60 + minutes;\n\nlet dureeMinutes;\nif (minutesReveil >= minutesCoucher) {\n  dureeMinutes = minutesReveil - minutesCoucher;\n} else {\n  dureeMinutes = (24 * 60 - minutesCoucher) + minutesReveil;\n}\n\nif (dureeMinutes > 18 * 60) {\n  return {\n    chatId,\n    reply: `⚠️ Duree calculee de ${Math.floor(dureeMinutes/60)}h${dureeMinutes%60} - ca semble incorrect.\\nVerifie tes heures (coucher: ${coucherStr}, reveil: ${heures}:${String(minutes).padStart(2,'0')}).`\n  };\n}\n\nconst dureeH = Math.floor(dureeMinutes / 60);\nconst dureeM = dureeMinutes % 60;\n\nlet commentaire, emoji;\nif (dureeMinutes >= 8 * 60) {\n  commentaire = \"Excellente nuit !\";\n  emoji = \"🌟\";\n} else if (dureeMinutes >= 7 * 60) {\n  commentaire = \"Bonne nuit !\";\n  emoji = \"✅\";\n} else if (dureeMinutes >= 6 * 60) {\n  commentaire = \"Correct, mais essaie de dormir plus.\";\n  emoji = \"😐\";\n} else {\n  commentaire = \"Insuffisant ! Pense a te coucher plus tot.\";\n  emoji = \"⚠️\";\n}\n\nconst now = new Date();\nconst dateNuit = new Date(now);\nif (hCoucher >= 18) {\n  dateNuit.setDate(dateNuit.getDate() - 1);\n}\nconst jourNuit = `${String(dateNuit.getDate()).padStart(2, '0')}/${String(dateNuit.getMonth() + 1).padStart(2, '0')}`;\n\nconst hCoucherStr = `${String(hCoucher).padStart(2, '0')}h${String(mCoucher).padStart(2, '0')}`;\nconst hReveilStr = `${String(heures).padStart(2, '0')}h${String(minutes).padStart(2, '0')}`;\nconst dureeStr = `${dureeH}h${String(dureeM).padStart(2, '0')}`;\n\nconst reply = `🛏️ Nuit du ${jourNuit} - Tu as dormi ${dureeStr}.\\nCoucher : ${hCoucherStr} | Reveil : ${hReveilStr}\\n${emoji} ${commentaire}`;\n\n// === SAUVEGARDER L'HISTORIQUE ===\nif (!staticData[`historique_${chatId}`]) {\n  staticData[`historique_${chatId}`] = [];\n}\nstaticData[`historique_${chatId}`].push({\n  date: jourNuit,\n  timestamp: Date.now(),\n  coucher: coucherStr,\n  reveil: `${String(heures).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`,\n  dureeMinutes: dureeMinutes\n});\n\n// Garder max 180 jours (6 mois)\nif (staticData[`historique_${chatId}`].length > 180) {\n  staticData[`historique_${chatId}`] = staticData[`historique_${chatId}`].slice(-180);\n}\n\ndelete staticData[`coucher_${chatId}`];\ndelete staticData[`coucher_timestamp_${chatId}`];\n\nreturn { chatId, reply };"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000005",
+      "name": "Calculer Sommeil",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const chatId = $input.item.json.chatId;\nconst staticData = $getWorkflowStaticData('global');\nconst historique = staticData[`historique_${chatId}`] || [];\n\nif (historique.length === 0) {\n  return {\n    chatId,\n    reply: \"📊 Aucune donnee de sommeil enregistree.\\nCommence par envoyer : dors HH:MM\",\n    chartUrl: ''\n  };\n}\n\nconst now = Date.now();\nconst msJour = 24 * 60 * 60 * 1000;\n\n// Filtrer par periodes\nconst semaine = historique.filter(h => (now - h.timestamp) <= 7 * msJour);\nconst mois = historique.filter(h => (now - h.timestamp) <= 30 * msJour);\nconst sixMois = historique.filter(h => (now - h.timestamp) <= 180 * msJour);\n\n// Calcul de moyenne\nfunction moyenne(arr) {\n  if (arr.length === 0) return null;\n  const total = arr.reduce((sum, h) => sum + h.dureeMinutes, 0);\n  return Math.round(total / arr.length);\n}\n\nfunction formatDuree(min) {\n  if (min === null) return 'Pas de donnees';\n  return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`;\n}\n\nfunction getEmoji(min) {\n  if (min === null) return '';\n  if (min >= 480) return '🌟';\n  if (min >= 420) return '✅';\n  if (min >= 360) return '😐';\n  return '⚠️';\n}\n\nconst moySemaine = moyenne(semaine);\nconst moyMois = moyenne(mois);\nconst moySixMois = moyenne(sixMois);\n\n// === TEXTE DU RESUME ===\nlet reply = `📊 STATISTIQUES SOMMEIL\\n`;\nreply += `━━━━━━━━━━━━━━━━━━━━━\\n`;\nreply += `\\n📅 Semaine (${semaine.length} nuits)\\n`;\nreply += `   Moyenne : ${formatDuree(moySemaine)} ${getEmoji(moySemaine)}\\n`;\nreply += `\\n🗓️ Mois (${mois.length} nuits)\\n`;\nreply += `   Moyenne : ${formatDuree(moyMois)} ${getEmoji(moyMois)}\\n`;\nreply += `\\n📆 6 mois (${sixMois.length} nuits)\\n`;\nreply += `   Moyenne : ${formatDuree(moySixMois)} ${getEmoji(moySixMois)}\\n`;\n\n// Meilleure et pire nuit du mois\nif (mois.length > 0) {\n  const best = mois.reduce((a, b) => a.dureeMinutes > b.dureeMinutes ? a : b);\n  const worst = mois.reduce((a, b) => a.dureeMinutes < b.dureeMinutes ? a : b);\n  reply += `\\n🏆 Meilleure nuit du mois : ${formatDuree(best.dureeMinutes)} (${best.date})`;\n  reply += `\\n😴 Pire nuit du mois : ${formatDuree(worst.dureeMinutes)} (${worst.date})`;\n}\n\n// === GRAPHIQUE QUICKCHART ===\n// Prendre les 30 derniers jours pour le graphe\nconst dataGraph = mois.slice(-30);\nconst labels = dataGraph.map(h => h.date);\nconst values = dataGraph.map(h => +(h.dureeMinutes / 60).toFixed(2));\n\n// Couleurs selon la duree\nconst colors = values.map(v => {\n  if (v >= 8) return 'rgba(46, 204, 113, 0.8)';\n  if (v >= 7) return 'rgba(52, 152, 219, 0.8)';\n  if (v >= 6) return 'rgba(241, 196, 15, 0.8)';\n  return 'rgba(231, 76, 60, 0.8)';\n});\n\nconst chartConfig = {\n  type: 'bar',\n  data: {\n    labels: labels,\n    datasets: [{\n      label: 'Heures de sommeil',\n      data: values,\n      backgroundColor: colors,\n      borderRadius: 4\n    }]\n  },\n  options: {\n    plugins: {\n      title: {\n        display: true,\n        text: 'Historique de sommeil',\n        font: { size: 18 },\n        color: '#ffffff'\n      },\n      legend: { display: false },\n      annotation: {\n        annotations: {\n          line7h: {\n            type: 'line',\n            yMin: 7,\n            yMax: 7,\n            borderColor: 'rgba(46, 204, 113, 0.5)',\n            borderWidth: 2,\n            borderDash: [6, 6],\n            label: {\n              display: true,\n              content: '7h objectif',\n              position: 'end',\n              color: '#2ecc71',\n              font: { size: 10 }\n            }\n          }\n        }\n      }\n    },\n    scales: {\n      y: {\n        beginAtZero: false,\n        min: 0,\n        max: 12,\n        title: { display: true, text: 'Heures', color: '#cccccc' },\n        ticks: { color: '#cccccc' },\n        grid: { color: 'rgba(255,255,255,0.1)' }\n      },\n      x: {\n        ticks: { color: '#cccccc', maxRotation: 45 },\n        grid: { display: false }\n      }\n    }\n  }\n};\n\nconst chartUrl = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig))}&w=800&h=400&bkg=rgb(30,30,30)`;\n\n// === GRAPHE MOYENNES PAR SEMAINE (6 mois) ===\n// Regrouper par semaine\nconst weeks = {};\nsixMois.forEach(h => {\n  const d = new Date(h.timestamp);\n  const weekStart = new Date(d);\n  weekStart.setDate(d.getDate() - d.getDay() + 1);\n  const weekKey = `${String(weekStart.getDate()).padStart(2,'0')}/${String(weekStart.getMonth()+1).padStart(2,'0')}`;\n  if (!weeks[weekKey]) weeks[weekKey] = [];\n  weeks[weekKey].push(h.dureeMinutes);\n});\n\nconst weekLabels = Object.keys(weeks);\nconst weekAvgs = weekLabels.map(k => +(weeks[k].reduce((a,b) => a+b, 0) / weeks[k].length / 60).toFixed(2));\n\nconst chartConfig2 = {\n  type: 'line',\n  data: {\n    labels: weekLabels,\n    datasets: [{\n      label: 'Moyenne hebdo (h)',\n      data: weekAvgs,\n      borderColor: 'rgba(52, 152, 219, 1)',\n      backgroundColor: 'rgba(52, 152, 219, 0.2)',\n      fill: true,\n      tension: 0.3,\n      pointRadius: 4,\n      pointBackgroundColor: 'rgba(52, 152, 219, 1)'\n    }]\n  },\n  options: {\n    plugins: {\n      title: {\n        display: true,\n        text: 'Evolution moyenne par semaine',\n        font: { size: 18 },\n        color: '#ffffff'\n      },\n      legend: { display: false },\n      annotation: {\n        annotations: {\n          line7h: {\n            type: 'line',\n            yMin: 7,\n            yMax: 7,\n            borderColor: 'rgba(46, 204, 113, 0.5)',\n            borderWidth: 2,\n            borderDash: [6, 6]\n          }\n        }\n      }\n    },\n    scales: {\n      y: {\n        min: 4,\n        max: 10,\n        title: { display: true, text: 'Heures', color: '#cccccc' },\n        ticks: { color: '#cccccc' },\n        grid: { color: 'rgba(255,255,255,0.1)' }\n      },\n      x: {\n        ticks: { color: '#cccccc', maxRotation: 45 },\n        grid: { display: false }\n      }\n    }\n  }\n};\n\nconst chartUrl2 = `https://quickchart.io/chart?c=${encodeURIComponent(JSON.stringify(chartConfig2))}&w=800&h=400&bkg=rgb(30,30,30)`;\n\nreturn {\n  chatId,\n  reply,\n  chartUrl,\n  chartUrl2\n};"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000020",
+      "name": "Generer Stats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 350]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000006",
+      "name": "Repondre Coucher",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1000, 100]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000007",
+      "name": "Repondre Resume",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.reply }}",
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000021",
+      "name": "Envoyer Stats Texte",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1500, 300]
+    },
+    {
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "={{ $json.chatId }}",
+        "file": "={{ $json.chartUrl }}",
+        "additionalFields": {
+          "caption": "📊 Historique journalier (30 derniers jours)"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000022",
+      "name": "Envoyer Graphe Jours",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1750, 250]
+    },
+    {
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "={{ $('Generer Stats').item.json.chatId }}",
+        "file": "={{ $('Generer Stats').item.json.chartUrl2 }}",
+        "additionalFields": {
+          "caption": "📈 Evolution des moyennes par semaine"
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000023",
+      "name": "Envoyer Graphe Semaines",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2000, 250]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "❓ Commande non reconnue.\\n\\nCommandes disponibles :\\n- dors HH:MM -> enregistrer ton coucher\\n- reveil HH:MM -> voir ton resume de nuit\\n- stats -> voir tes statistiques et graphiques\\n\\nExemple : dors 23:30",
+        "additionalFields": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000008",
+      "name": "Repondre Aide",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1250, 550]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          { "node": "Parser Message", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parser Message": {
+      "main": [
+        [
+          { "node": "Est-ce dors ?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Est-ce dors ?": {
+      "main": [
+        [
+          { "node": "Enregistrer Coucher", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Est-ce reveil ?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Est-ce reveil ?": {
+      "main": [
+        [
+          { "node": "Calculer Sommeil", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Est-ce stats ?", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Est-ce stats ?": {
+      "main": [
+        [
+          { "node": "Generer Stats", "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Repondre Aide", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Enregistrer Coucher": {
+      "main": [
+        [
+          { "node": "Repondre Coucher", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Calculer Sommeil": {
+      "main": [
+        [
+          { "node": "Repondre Resume", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Generer Stats": {
+      "main": [
+        [
+          { "node": "Envoyer Stats Texte", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Envoyer Stats Texte": {
+      "main": [
+        [
+          { "node": "Envoyer Graphe Jours", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Envoyer Graphe Jours": {
+      "main": [
+        [
+          { "node": "Envoyer Graphe Semaines", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}
